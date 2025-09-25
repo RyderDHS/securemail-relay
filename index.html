@@ -1,56 +1,67 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>SecureMail relay…</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body{font:14px system-ui,Segoe UI,Arial;margin:2rem;color:#222}
-    .box{max-width:750px;margin:auto}
-    pre{white-space:pre-wrap;word-break:break-all}
-  </style>
+  <meta charset="utf-8">
+  <title>Secure Relay</title>
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <style>body{font-family:system-ui,Segoe UI,Arial;margin:24px}</style>
 </head>
 <body>
-<div class="box">
-  <p>Opening secure message…</p>
-  <form id="relayForm" method="post"></form>
-  <noscript>This page requires JavaScript.</noscript>
-</div>
+  <noscript>JavaScript is required to open the message.</noscript>
+  <script>
+    (async () => {
+      const p = new URLSearchParams(location.search);
+      const u   = p.get('u');     // URL de destino (safeformpost.aspx)
+      const raw = p.get('raw');   // URL del JSON con los pares {name,value}
+      const dbg = p.get('debug'); // debug opcional
 
-<script>
-function q(name){const u=new URL(location.href);return u.searchParams.get(name)}
-function addHidden(f,n,v){const i=document.createElement('input');i.type='hidden';i.name=n;i.value=v;f.appendChild(i)}
+      if (!u || !raw) {
+        document.body.textContent = 'Missing u or raw parameter.';
+        return;
+      }
 
-async function run(){
-  const form  = document.getElementById('relayForm');
-  const postUrl = decodeURIComponent(q('u')||'').trim();
-  if(!postUrl){throw new Error('Missing u (post URL)')}
-  form.action = postUrl;
+      // Descarga el JSON EXACTO (sin tocarlo)
+      const res = await fetch(raw, { cache: 'no-store' });
+      if (!res.ok) {
+        document.body.textContent = 'Cannot fetch payload: ' + res.status;
+        return;
+      }
+      const pairs = await res.json();   // [{name:"...", value:"..."}, ...]
 
-  const h = q('h');              // payload embebido (antiguo)
-  const raw = q('raw');          // payload externo (nuevo)
+      // (opcional) Modo debug: muestra longitudes y no envía
+      if (dbg === '1') {
+        const h = (pairs.find(x => x.name === 'theForm') || {}).value;
+        const r = (pairs.find(x => x.name === 'rcptData') || {}).value;
+        document.body.innerHTML =
+          `<p>Debug on. Not submitting.</p>
+           <p>theForm length: ${h ? h.length : 'N/A'}</p>
+           <p>rcptData length: ${r ? r.length : 'N/A'}</p>`;
+        return;
+      }
 
-  let pairs;
-  if (h) {
-    pairs = JSON.parse(decodeURIComponent(h));
-  } else if (raw) {
-    const rsp = await fetch(decodeURIComponent(raw), {cache:'no-store'});
-    if(!rsp.ok) throw new Error('Cannot fetch payload: ' + rsp.status);
-    pairs = await rsp.json();
-  } else {
-    throw new Error('Missing h or raw payload');
-  }
+      // Crea formulario clásico POST urlencoded (el navegador hace el encoding)
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = u;
+      form.enctype = 'application/x-www-form-urlencoded';
+      form.acceptCharset = 'UTF-8';
+      form.style.display = 'none';
 
-  (pairs||[]).forEach(p=> addHidden(form, p.name, p.value));
-  form.submit();
-}
+      for (const kv of pairs) {
+        const input = document.createElement('input');
+        input.type  = 'hidden';
+        input.name  = kv.name;
+        input.value = kv.value;     // ¡NO decodificar ni reemplazar NADA!
+        form.appendChild(input);
+      }
 
-run().catch(e=>{
-  document.querySelector('.box').innerHTML =
-    '<p>Relay error: '+(e&&e.message?e.message:e)+'</p>'+
-    '<p>URL received:</p><pre>'+location.href+'</pre>';
-  console.error(e);
-});
-</script>
+      document.body.appendChild(form);
+      // Enviar en el siguiente tick para asegurar que el DOM se montó
+      setTimeout(() => form.requestSubmit ? form.requestSubmit() : form.submit(), 0);
+    })().catch(e => {
+      document.body.textContent = 'Relay error: ' + e;
+    });
+  </script>
 </body>
 </html>
