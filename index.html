@@ -1,31 +1,151 @@
-<script>
-(async () => {
-  try {
-    const q = new URLSearchParams(location.search);
-    const post = q.get('u');       // https://securemail.commonspirit.org/formpostdir/safeformpost.aspx
-    const raw  = q.get('raw');     // https://raw.githubusercontent.com/.../r/<id>.json
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="referrer" content="no-referrer" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Secure Relay</title>
 
-    const res = await fetch(raw, {cache:'no-store'});
-    if (!res.ok) throw new Error('Cannot fetch payload: ' + res.status);
-    const fields = await res.json(); // [{name, value}] o {name, b64}
+  <!-- Opcional: mejora el handshake con el host de destino -->
+  <link rel="preconnect" href="https://securemail.commonspirit.org" crossorigin />
 
-    const f = document.createElement('form');
-    f.method = 'POST';
-    f.action = post;
-    f.style.display = 'none';
-
-    for (const it of fields) {
-      const inp = document.createElement('input');
-      inp.type  = 'hidden';
-      inp.name  = it.name;
-      inp.value = (it.value != null) ? it.value : (it.b64 ? atob(it.b64) : '');
-      f.appendChild(inp);
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+      margin: 0; min-height: 100dvh; display: grid; place-items: center;
+      background: #e9f1ff;
     }
+    .card {
+      background: #fff; color:#1b1f23; padding: 22px 24px; border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.08); max-width: 720px; width: min(92vw, 720px);
+    }
+    h1 { margin: 0 0 .25rem; font-size: 1.15rem; }
+    p { margin: .25rem 0; line-height: 1.5; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .muted { opacity: .75; font-size: .95rem; }
+    .hidden { display: none !important; }
+    .btn {
+      display: inline-block; margin-top: .5rem; text-decoration: none; padding: .6rem .9rem;
+      border-radius: 10px; border: 1px solid #2b7de9; color:#fff; background:#2b7de9;
+    }
+    .btn.secondary { background: transparent; color:#2b7de9; }
+  </style>
+</head>
+<body>
 
-    document.body.appendChild(f);
-    f.submit();
-  } catch (e) {
-    document.body.textContent = 'Relay error: ' + e.message;
-  }
-})();
-</script>
+  <div class="card" id="panel">
+    <h1>Abriendo mensaje seguro…</h1>
+    <p class="muted" id="status">Preparando el envío.</p>
+    <p class="hidden" id="fallback">
+      Si ves <em>“Forbidden”</em> o no ocurre nada, primero abre Proofpoint y vuelve a intentar:
+      <a class="btn secondary" href="https://securemail.commonspirit.org/securereader/login.jsf" target="_self" rel="noopener">Abrir Proofpoint</a>
+    </p>
+  </div>
+
+  <form id="pfForm" method="POST" target="_self" class="hidden"></form>
+
+  <script>
+    (async function () {
+      const $ = (id) => document.getElementById(id);
+      const setStatus = (t) => $("status").textContent = t;
+
+      // 1) Validar parámetros
+      const qs  = new URLSearchParams(location.search);
+      const u   = qs.get("u");
+      const raw = qs.get("raw");
+
+      if (!u || !raw) {
+        $("status").innerHTML = 'Faltan parámetros en la URL (<code>u</code> y/o <code>raw</code>).';
+        $("fallback").classList.remove("hidden");
+        return;
+      }
+
+      let actionUrl;
+      try {
+        actionUrl = new URL(u);
+      } catch {
+        $("status").textContent = "URL de destino inválida.";
+        $("fallback").classList.remove("hidden");
+        return;
+      }
+
+      // Permite solo el host esperado (ajústalo si necesitas más)
+      if (!/\.commonspirit\.org$/i.test(actionUrl.hostname)) {
+        $("status").textContent = "Host de destino no permitido.";
+        $("fallback").classList.remove("hidden");
+        return;
+      }
+
+      // 2) Descargar el JSON con los campos
+      setStatus("Descargando campos…");
+      let payload;
+      try {
+        // Bypass de caché para GitHub Raw
+        const rawUrl = raw + (raw.includes("?") ? "&" : "?") + "n=" + Date.now();
+        const res = await fetch(rawUrl, { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        payload = await res.json();
+      } catch (e) {
+        $("status").textContent = "No se pudo descargar el payload: " + (e && e.message ? e.message : e);
+        $("fallback").classList.remove("hidden");
+        return;
+      }
+
+      // Tolerancia de formatos: array directo o dentro de .fields/.form/.data
+      const fields = Array.isArray(payload) ? payload : (payload.fields || payload.form || payload.data || []);
+      if (!fields || !fields.length) {
+        $("status").textContent = "Payload sin campos.";
+        $("fallback").classList.remove("hidden");
+        return;
+      }
+
+      // 3) Construir el form con inputs hidden
+      const form = $("pfForm");
+      form.action = actionUrl.href;
+
+      const decodeB64 = (s) => {
+        try { return atob(s); } catch { return ""; }
+      };
+
+      for (const f of fields) {
+        if (!f || !f.name) continue;
+        const input = document.createElement("input");
+        input.type  = "hidden";
+        input.name  = f.name;
+        let val     = typeof f.b64 === "string" ? decodeB64(f.b64) : (f.value ?? "");
+        // Normalización por si quedara algún &amp;
+        if (typeof val === "string") val = val.replace(/&amp;/g, "&");
+        input.value = val;
+        form.appendChild(input);
+      }
+
+      // 4) Precalentar Proofpoint para obtener cookies (BID/JSESSIONID) y luego enviar
+      setStatus("Inicializando sesión segura…");
+
+      function submitAfterPrime() {
+        setTimeout(() => {
+          setStatus("Enviando datos a Proofpoint…");
+          try { form.submit(); }
+          catch {
+            $("fallback").classList.remove("hidden");
+            setStatus("No se pudo enviar el formulario automáticamente.");
+          }
+        }, 800); // deja respirar la cookie
+      }
+
+      try {
+        const img = new Image();
+        img.onload = img.onerror = submitAfterPrime;
+        img.src = "https://securemail.commonspirit.org/securereader/login.jsf?n=" + Date.now();
+      } catch {
+        // Si algo falla, intenta igual.
+        submitAfterPrime();
+      }
+
+      // Mostrar fallback por si el navegador bloquea cookies de 3ros
+      $("fallback").classList.remove("hidden");
+    })();
+  </script>
+</body>
+</html>
