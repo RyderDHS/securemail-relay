@@ -7,6 +7,7 @@
   <style>
     body{font:14px system-ui,Segoe UI,Arial;margin:2rem;color:#222}
     .box{max-width:750px;margin:auto}
+    pre{white-space:pre-wrap;word-break:break-all}
   </style>
 </head>
 <body>
@@ -17,27 +18,39 @@
 </div>
 
 <script>
-function g(k){const u=new URL(location.href);return u.searchParams.get(k)}
+function q(name){const u=new URL(location.href);return u.searchParams.get(name)}
 function addHidden(f,n,v){const i=document.createElement('input');i.type='hidden';i.name=n;i.value=v;f.appendChild(i)}
-(function(){
-  try{
-    const postUrl = decodeURIComponent(g('u')||'').trim();
-    const raw     = decodeURIComponent(g('h')||'').trim();
-    if(!postUrl || !raw) throw new Error('Missing u or h');
 
-    const pairs = JSON.parse(raw);              // [{name:"...", value:"..."}, ...]
-    const form  = document.getElementById('relayForm');
-    form.action = postUrl;
+async function run(){
+  const form  = document.getElementById('relayForm');
+  const postUrl = decodeURIComponent(q('u')||'').trim();
+  if(!postUrl){throw new Error('Missing u (post URL)')}
+  form.action = postUrl;
 
-    (pairs||[]).forEach(p=> addHidden(form, p.name, p.value));
-    form.submit();
-  }catch(e){
-    document.querySelector('.box').innerHTML =
-      '<p>Relay error: '+(e&&e.message?e.message:e)+'</p>'+
-      '<p>URL received:</p><pre>'+location.href+'</pre>';
-    console.error(e);
+  const h = q('h');              // payload embebido (antiguo)
+  const raw = q('raw');          // payload externo (nuevo)
+
+  let pairs;
+  if (h) {
+    pairs = JSON.parse(decodeURIComponent(h));
+  } else if (raw) {
+    const rsp = await fetch(decodeURIComponent(raw), {cache:'no-store'});
+    if(!rsp.ok) throw new Error('Cannot fetch payload: ' + rsp.status);
+    pairs = await rsp.json();
+  } else {
+    throw new Error('Missing h or raw payload');
   }
-})();
+
+  (pairs||[]).forEach(p=> addHidden(form, p.name, p.value));
+  form.submit();
+}
+
+run().catch(e=>{
+  document.querySelector('.box').innerHTML =
+    '<p>Relay error: '+(e&&e.message?e.message:e)+'</p>'+
+    '<p>URL received:</p><pre>'+location.href+'</pre>';
+  console.error(e);
+});
 </script>
 </body>
 </html>
