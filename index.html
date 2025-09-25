@@ -1,41 +1,42 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Secure Message Relay</title>
+  <title>SecureMail relay…</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font:14px system-ui,Segoe UI,Arial;margin:2rem;color:#222}
+    .box{max-width:750px;margin:auto}
+  </style>
 </head>
 <body>
+<div class="box">
+  <p>Opening secure message…</p>
+  <form id="relayForm" method="post"></form>
+  <noscript>This page requires JavaScript.</noscript>
+</div>
+
 <script>
-(function () {
-  const params = new URLSearchParams(window.location.search);
-  const action = decodeURIComponent(params.get('a') || '');
-  const payloadB64 = params.get('p') || '';
+function g(k){const u=new URL(location.href);return u.searchParams.get(k)}
+function addHidden(f,n,v){const i=document.createElement('input');i.type='hidden';i.name=n;i.value=v;f.appendChild(i)}
+(function(){
+  try{
+    const postUrl = decodeURIComponent(g('u')||'').trim();
+    const raw     = decodeURIComponent(g('h')||'').trim();
+    if(!postUrl || !raw) throw new Error('Missing u or h');
 
-  if (!action || !payloadB64) {
-    document.body.textContent = 'Missing parameters.';
-    return;
+    const pairs = JSON.parse(raw);              // [{name:"...", value:"..."}, ...]
+    const form  = document.getElementById('relayForm');
+    form.action = postUrl;
+
+    (pairs||[]).forEach(p=> addHidden(form, p.name, p.value));
+    form.submit();
+  }catch(e){
+    document.querySelector('.box').innerHTML =
+      '<p>Relay error: '+(e&&e.message?e.message:e)+'</p>'+
+      '<p>URL received:</p><pre>'+location.href+'</pre>';
+    console.error(e);
   }
-
-  const payload = atob(payloadB64); // x-www-form-urlencoded: k=v&k2=v2...
-
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = action;
-  document.body.appendChild(form);
-
-  // Crear inputs a partir de k=v&k2=v2...
-  payload.split('&').forEach(kv => {
-    const [k, v] = kv.split('=');
-    if (k) {
-      const input = document.createElement('input');
-      input.type  = 'hidden';
-      input.name  = decodeURIComponent(k);
-      input.value = decodeURIComponent(v || '');
-      form.appendChild(input);
-    }
-  });
-
-  form.submit();
 })();
 </script>
 </body>
