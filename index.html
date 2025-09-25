@@ -1,67 +1,31 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Secure Relay</title>
-  <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Cache-Control" content="no-store" />
-  <style>body{font-family:system-ui,Segoe UI,Arial;margin:24px}</style>
-</head>
-<body>
-  <noscript>JavaScript is required to open the message.</noscript>
-  <script>
-    (async () => {
-      const p = new URLSearchParams(location.search);
-      const u   = p.get('u');     // URL de destino (safeformpost.aspx)
-      const raw = p.get('raw');   // URL del JSON con los pares {name,value}
-      const dbg = p.get('debug'); // debug opcional
+<script>
+(async () => {
+  try {
+    const q = new URLSearchParams(location.search);
+    const post = q.get('u');       // https://securemail.commonspirit.org/formpostdir/safeformpost.aspx
+    const raw  = q.get('raw');     // https://raw.githubusercontent.com/.../r/<id>.json
 
-      if (!u || !raw) {
-        document.body.textContent = 'Missing u or raw parameter.';
-        return;
-      }
+    const res = await fetch(raw, {cache:'no-store'});
+    if (!res.ok) throw new Error('Cannot fetch payload: ' + res.status);
+    const fields = await res.json(); // [{name, value}] o {name, b64}
 
-      // Descarga el JSON EXACTO (sin tocarlo)
-      const res = await fetch(raw, { cache: 'no-store' });
-      if (!res.ok) {
-        document.body.textContent = 'Cannot fetch payload: ' + res.status;
-        return;
-      }
-      const pairs = await res.json();   // [{name:"...", value:"..."}, ...]
+    const f = document.createElement('form');
+    f.method = 'POST';
+    f.action = post;
+    f.style.display = 'none';
 
-      // (opcional) Modo debug: muestra longitudes y no envía
-      if (dbg === '1') {
-        const h = (pairs.find(x => x.name === 'theForm') || {}).value;
-        const r = (pairs.find(x => x.name === 'rcptData') || {}).value;
-        document.body.innerHTML =
-          `<p>Debug on. Not submitting.</p>
-           <p>theForm length: ${h ? h.length : 'N/A'}</p>
-           <p>rcptData length: ${r ? r.length : 'N/A'}</p>`;
-        return;
-      }
+    for (const it of fields) {
+      const inp = document.createElement('input');
+      inp.type  = 'hidden';
+      inp.name  = it.name;
+      inp.value = (it.value != null) ? it.value : (it.b64 ? atob(it.b64) : '');
+      f.appendChild(inp);
+    }
 
-      // Crea formulario clásico POST urlencoded (el navegador hace el encoding)
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = u;
-      form.enctype = 'application/x-www-form-urlencoded';
-      form.acceptCharset = 'UTF-8';
-      form.style.display = 'none';
-
-      for (const kv of pairs) {
-        const input = document.createElement('input');
-        input.type  = 'hidden';
-        input.name  = kv.name;
-        input.value = kv.value;     // ¡NO decodificar ni reemplazar NADA!
-        form.appendChild(input);
-      }
-
-      document.body.appendChild(form);
-      // Enviar en el siguiente tick para asegurar que el DOM se montó
-      setTimeout(() => form.requestSubmit ? form.requestSubmit() : form.submit(), 0);
-    })().catch(e => {
-      document.body.textContent = 'Relay error: ' + e;
-    });
-  </script>
-</body>
-</html>
+    document.body.appendChild(f);
+    f.submit();
+  } catch (e) {
+    document.body.textContent = 'Relay error: ' + e.message;
+  }
+})();
+</script>
